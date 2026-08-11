@@ -1,0 +1,120 @@
+name: Outlook register
+
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: '要注册的账号数量'
+        required: false
+        default: '5'
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TZ: Asia/Shanghai
+
+jobs:
+  prepare-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      ids: ${{ steps.matrix.outputs.ids }}
+    steps:
+      - id: matrix
+        name: 校验数量并生成矩阵
+        shell: python
+        env:
+          COUNT: ${{ inputs.count }}
+        run: |
+          import json
+          import os
+
+          raw = (os.environ.get('COUNT') or '5').strip()
+          try:
+              count = int(raw)
+          except ValueError as exc:
+              raise SystemExit(f'count 必须是正整数，收到：{raw!r}') from exc
+          if count < 1 or count > 20:
+              raise SystemExit(f'count 超出范围，允许 1-20，收到：{count}')
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write('ids=' + json.dumps(list(range(count)), separators=(',', ':')) + '\n')
+
+  register:
+    needs: prepare-matrix
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      max-parallel: 5
+      fail-fast: false
+      matrix:
+        account_index: ${{ fromJson(needs.prepare-matrix.outputs.ids) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 构建并运行 Outlook 注册
+        env:
+          CAPSOLVER_API_KEY: ${{ secrets.CAPSOLVER_API_KEY }}
+          ACCOUNT_INDEX: ${{ matrix.account_index }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
+          npm install
+          npm run build
+          timeout -k 30s 600s node dist/app.js
+
+      - name: 保存账号结果
+        if: always()
+        run: |
+          if [ -s "$GITHUB_STEP_SUMMARY" ]; then
+            cp "$GITHUB_STEP_SUMMARY" step-summary
+          fi
+
+      - name: 上传账号结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: step-summary-${{ matrix.account_index }}
+          path: step-summary
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: 上传注册过程证据
+        if: always() && hashFiles('evidence/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-${{ matrix.account_index }}
+          path: evidence/
+          retention-days: 7
+
+  collect-summary:
+    runs-on: ubuntu-latest
+    if: always()
+    needs: register
+    steps:
+      - name: 下载所有账号结果
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: step-summary-*
+          path: summaries
+
+      - name: 合并结果
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+
+          results = []
+          for path in sorted(Path('summaries').glob('step-summary-*/step-summary')):
+              if path.is_file():
+                  for line in path.read_text(encoding='utf-8').splitlines():
+                      if line.strip():
+                          results.append(line.strip())
+
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+              summary.write(f'成功账号数：{len(results)}\n')
+              if results:
+                  summary.write('\n'.join(results) + '\n')

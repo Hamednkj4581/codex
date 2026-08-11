@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", // 输出的 JS 版本
+    "module": "ESNext", // 使用 ESNext 模块系统
+    "moduleResolution": "bundler", // 与 esbuild 的模块解析保持一致
+    "outDir": "./dist", // 输出目录
+    "rootDir": "./src",
+    "esModuleInterop": true, // 兼容 commonjs 包
+    "forceConsistentCasingInFileNames": true, // 文件名大小写一致
+    "skipLibCheck": true, // 跳过库类型检查
+    "sourceMap": true, // 生成 sourcemap
+    "resolveJsonModule": true, // 支持 import JSON
+    "strict": false
+  },
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

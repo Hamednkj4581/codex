@@ -1,0 +1,8 @@
+/dist/
+/node_modules/
+yarn.lock
+package-lock.json
+/images/
+/evidence/
+.DS_Store
+/PAT
